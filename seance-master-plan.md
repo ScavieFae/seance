@@ -199,3 +199,39 @@ See `seance-visualization.md` for full design spec.
 - [ ] Per-path spatial resolution on dashboard
 - [ ] Agent autonomously discovering activity categories
 - [ ] The judges genuinely forget there are no cameras in the room
+
+---
+
+## Sponsor Integrations
+
+Ranked by natural fit to the project and prize value. See `docs/hackathon-sponsors-prizes.md` for full prize details.
+
+### Tier 1 — Strong Fit (integrate these)
+
+**assistant-ui — Chat interface ($800)**
+The judge-facing chat interface where people ask the agent what it perceives. "What's happening near candle 7?" / "How many people are in the room?" This is the exact use case assistant-ui is built for — ChatGPT-grade conversational UX wired to our agent's perception loop. Replaces building a chat UI from scratch.
+
+**Railtracks — Agent framework ($1,300)**
+Frame the Seance agent's perception→reasoning→action loop using Railtracks' agentic framework. CSI data flows in as sensor input, the agent reasons about spatial state, and outputs candle control commands + natural language narration. The agent architecture maps directly to their builder model.
+
+**DigitalOcean — Inference cloud ($1,000 cash + credits)**
+Run LLM inference on DigitalOcean's GPU cloud instead of locally. Keeps the laptop free for serial connections to ESP32 sensors. Also makes the architecture more credible — the sensing pipeline runs at the edge, inference runs in the cloud, control commands flow back down.
+
+**Augment Code — AI coding agent ($3,500 — largest cash prize)**
+Use Augment Code during development to build the pipeline. Biggest cash prize of any sponsor. Integration is usage-based (show that Augment helped write the codebase), not architectural. Worth pursuing for the prize alone.
+
+### Tier 2 — Workable Fit (integrate if time allows)
+
+**Nexla — Data pipeline ($900 cash + credits)**
+Frame the CSI data flow as a real-time data integration problem: raw serial streams from 4 ESP32s → parsed CSI packets → per-path feature extraction → structured perception JSON → agent consumption. Nexla's data pipeline tools could manage the transformation and routing.
+
+**Unkey — API infrastructure (enterprise license worth up to $25k)**
+If we expose the agent's perception as an API (`/api/perception`, `/api/candles/control`), use Unkey for API key management. Quick integration, and the prize (1 year enterprise license at any scale) is potentially the most valuable non-cash prize.
+
+### Tier 3 — Skip Unless Required
+
+**Senso.ai** — Not enough info on their product to assess fit.
+
+**WorkOS** — Enterprise auth/directory sync. Doesn't map to a hackathon demo with no user accounts.
+
+**Google DeepMind** — Not a sponsor with a prize category, but reference AM-FM and frontier perception research in the pitch. DeepMind judges would appreciate the research framing.
