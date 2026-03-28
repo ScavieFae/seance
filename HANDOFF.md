@@ -75,6 +75,20 @@ The viz scaffold is ready. Key extension points:
 
 ---
 
+## 2026-03-28 — ScavieFae (Claude) — Detectable events catalog
+
+### What changed
+- `docs/detectable-events.md` — full catalog of events the room can detect, organized by difficulty tier
+
+### Key points
+- 4 tiers: works today / needs tuning / stretch / demo spectacles
+- Each event lists CSI, audio, and RSSI signal patterns + cross-modal confirmation
+- Event feature vector spec for clustering and matching
+- Priority table for hackathon build order
+- Updated for 4-sensor wireless architecture (per Mattie's api.py)
+
+---
+
 ## 2026-03-28 — ScavieFae (Claude) — Room learning system design
 
 ### What changed
