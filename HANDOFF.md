@@ -75,6 +75,28 @@ The viz scaffold is ready. Key extension points:
 
 ---
 
+## 2026-03-28 — ScavieFae (Claude) — Room learning system design
+
+### What changed
+- `docs/room-learning-system.md` — full architecture for how the room teaches itself
+
+### Key concepts
+- **5-layer stack**: Raw Streams → Baseline → Event Detection → Clustering → Grounding → Cross-Modal Self-Supervision
+- **Events are atoms**: every disturbance becomes a discrete, feature-rich event object
+- **HDBSCAN clustering**: room discovers its own categories without labels
+- **One human annotation labels an entire cluster**: label propagation
+- **Cross-modal agreement** (CSI + audio + camera) enables auto-labeling without humans
+- **Learning curve**: trackable metric showing the room going from blind to seeing
+- **Brian's snapshot_dashboard already does proto-cross-modal memory** (audio → visual retrieval)
+
+### What to build next
+1. `event_detector.py` (~100 lines) — CSI events with cross-modal correlation
+2. `signature_library.py` (~150 lines) — persistent knowledge base with matching
+3. Clustering integration (~80 lines with sklearn)
+4. Learning API endpoints for the chat and viz
+
+---
+
 ## 2026-03-28 — ScavieFae (Claude) — React frontend scaffold
 
 ### What changed
