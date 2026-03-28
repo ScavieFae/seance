@@ -61,6 +61,8 @@ latest = {
     "candles": {}, "csi": {}, "sensors": {},
     "pinged_candle": None, "tick": 0,
     "people_count": 0,
+    "door_open": True,
+    "door_prediction": None,
 }
 lock = threading.Lock()
 
@@ -120,6 +122,44 @@ def extract_features(audio, sample_rate):
         "dominant_freq": round(dominant_freq, 2),
         "bands": {k: round(v, 8) for k, v in bands.items()},
     }
+
+
+# --- Door prediction ---
+
+# Thresholds derived from labeled data analysis
+DOOR_VAR_MEAN_THRESH = 21.81
+DOOR_VAR_MAX_THRESH = 305.74
+DOOR_PPS_THRESH = 23.15
+
+
+def predict_door(csi_data, sensor_data):
+    """Predict door open/closed from CSI variance and packet rates.
+    Returns (prediction_bool, confidence_str)."""
+    vrs = []
+    for paths in csi_data.values():
+        for p in paths.values():
+            vrs.append(p.get('variance_ratio', 1.0))
+
+    pps = [s.get('pps', 0) for s in sensor_data.values()] if sensor_data else [0]
+
+    if not vrs:
+        return None, "no data"
+
+    var_mean = float(np.mean(vrs))
+    var_max = float(np.max(vrs))
+    pps_mean = float(np.mean(pps))
+
+    score = 0  # higher = more likely open
+    if pps_mean < DOOR_PPS_THRESH:
+        score += 1
+    if var_mean > DOOR_VAR_MEAN_THRESH:
+        score += 1
+    if var_max > DOOR_VAR_MAX_THRESH:
+        score += 1
+
+    predicted_open = score >= 2
+    confidence = ["low", "low", "med", "high"][score]
+    return predicted_open, confidence
 
 
 # --- CSI from API ---
@@ -272,15 +312,22 @@ def capture_loop():
                 _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 img_b64 = base64.b64encode(buf).decode("ascii")
 
+            # Predict door state
+            door_pred, door_conf = predict_door(csi_data, sensor_data)
+
             # Build log entry
             with lock:
                 people_count = latest["people_count"]
+                door_open = latest["door_open"]
 
             log_entry = {
                 "timestamp": timestamp,
                 "tick": tick,
                 "duration_s": CHUNK_DURATION,
                 "people_count": people_count,
+                "door_open": door_open,
+                "door_prediction": door_pred,
+                "door_prediction_confidence": door_conf,
                 "pinged_candle": ping_id,
                 "ping_ok": ping_ok,
                 "image": img_filename,
@@ -305,6 +352,7 @@ def capture_loop():
                 latest["sensors"] = sensor_data
                 latest["pinged_candle"] = ping_id
                 latest["tick"] = tick
+                latest["door_prediction"] = {"open": door_pred, "confidence": door_conf}
 
             online = sum(1 for v in candle_data.values() if v.get("online"))
             n_sensors = len(sensor_data)
@@ -354,6 +402,15 @@ def api_people():
         if "count" in data:
             latest["people_count"] = max(0, int(data["count"]))
     return jsonify({"people_count": latest["people_count"]})
+
+
+@app.route("/api/door", methods=["POST"])
+def api_door():
+    data = request.get_json()
+    with lock:
+        if "open" in data:
+            latest["door_open"] = bool(data["open"])
+    return jsonify({"door_open": latest["door_open"]})
 
 
 DASHBOARD_HTML = """<!DOCTYPE html>
@@ -494,6 +551,40 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .people-counter button:hover { background: #2a2a2a; }
   .people-counter button:active { background: #FFB347; color: #0A0A0A; }
 
+  .door-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+  .door-toggle h2 { margin-bottom: 0; }
+  .door-btn {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #ccc;
+    font-size: 14px;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .door-btn.open { background: #1a3a1a; border-color: #2d5a2d; color: #5cb85c; }
+  .door-btn.closed { background: #3a1a1a; border-color: #5a2d2d; color: #d9534f; }
+
+  .door-prediction {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 20px;
+    padding-left: 20px;
+    border-left: 1px solid #333;
+  }
+  .door-prediction .pred-label { color: #666; font-size: 11px; }
+  .door-prediction .pred-value { font-weight: bold; font-size: 14px; }
+  .door-prediction .pred-value.open { color: #5cb85c; }
+  .door-prediction .pred-value.closed { color: #d9534f; }
+  .door-prediction .confidence { color: #555; font-size: 10px; }
+
   .sensor-row {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -521,6 +612,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <button onclick="adjustPeople(-1)">−</button>
   <div class="count-display" id="people-count">0</div>
   <button onclick="adjustPeople(1)">+</button>
+  <div class="door-toggle">
+    <h2>Door</h2>
+    <button class="door-btn open" id="door-btn" onclick="toggleDoor()">Open</button>
+  </div>
+  <div class="door-prediction">
+    <span class="pred-label">WiFi predicts:</span>
+    <span class="pred-value" id="door-pred">—</span>
+    <span class="confidence" id="door-conf"></span>
+  </div>
 </div>
 
 <div class="top-row">
@@ -632,6 +732,19 @@ function renderCandles(candles, csi, pinged) {
   }).join('');
 }
 
+function toggleDoor() {
+  const btn = document.getElementById('door-btn');
+  const isOpen = btn.classList.contains('open');
+  const newState = !isOpen;
+  btn.className = 'door-btn ' + (newState ? 'open' : 'closed');
+  btn.textContent = newState ? 'Open' : 'Closed';
+  fetch('/api/door', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({open: newState})
+  });
+}
+
 function adjustPeople(delta) {
   const el = document.getElementById('people-count');
   const current = parseInt(el.textContent) || 0;
@@ -659,6 +772,18 @@ async function poll() {
     if (d.sensors) renderSensors(d.sensors);
     renderCandles(d.candles || {}, d.csi || {}, d.pinged_candle);
     if (d.people_count !== undefined) document.getElementById('people-count').textContent = d.people_count;
+    if (d.door_open !== undefined) {
+      const btn = document.getElementById('door-btn');
+      btn.className = 'door-btn ' + (d.door_open ? 'open' : 'closed');
+      btn.textContent = d.door_open ? 'Open' : 'Closed';
+    }
+    if (d.door_prediction) {
+      const pred = document.getElementById('door-pred');
+      const isOpen = d.door_prediction.open;
+      pred.textContent = isOpen ? 'Open' : 'Closed';
+      pred.className = 'pred-value ' + (isOpen ? 'open' : 'closed');
+      document.getElementById('door-conf').textContent = '(' + d.door_prediction.confidence + ')';
+    }
   } catch(e){}
   setTimeout(poll, 600);
 }
