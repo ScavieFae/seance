@@ -144,6 +144,55 @@ The viz scaffold is ready. Key extension points:
 
 ---
 
+## 2026-03-28 — Mattie's Claude (Opus) — Central API + WiFi streaming firmware
+
+### What changed
+- `api.py` — FastAPI server that collects CSI from all 4 ESP32 sensors over UDP and exposes REST + WebSocket
+- `docs/api-readme.md` — full API documentation
+- `docs/network-setup.md` — updated with all 13 candles, color map, sensor info
+- `candles.json` — updated with final 13-candle color palette and sensor entries
+- ESP32 firmware modified: sensors now stream CSI over WiFi (UDP broadcast port 5500) instead of requiring USB serial. All 4 boards flashed.
+- Data logging: all CSI packets saved to `data/csi_*.jsonl` automatically
+
+### How it works
+1. Run `python3 api.py` on Mattie's laptop
+2. Server listens for UDP CSI broadcasts from all 4 ESP32 sensors
+3. Any machine on Gentle Thrills can access: `http://10.9.0.160:8000`
+4. WebSocket at `ws://10.9.0.160:8000/ws` — same data contract as `ws_bridge.py`
+5. REST endpoints for candle control, CSI snapshots, sonar sweeps
+6. 3D viz served at `/viz/room.html`
+
+### Key endpoints
+- `GET /sensors` — all 4 boards with packet stats, candles visible
+- `GET /csi/snapshot` — current per-path features from all sensors
+- `POST /candle/{id}/solo` — solo one candle for sonar sweep
+- `POST /sweep?dwell_ms=3000` — full calibration sweep
+- `POST /candles/color` — reset all to ID colors
+
+### Firmware changes (in ~/esp/esp-csi/examples/get-started/csi_recv/)
+- Added WiFi STA connection to Gentle Thrills
+- Added UDP broadcast of CSI data (port 5500)
+- Removed ESP-NOW (crashed with AP-managed channel)
+- Removed manual channel setting (AP sets it)
+- Boards are wireless — only need USB power bank, no serial cable to laptop
+
+### Sensors
+| IP | Board | Location |
+|----|-------|----------|
+| 10.9.0.237 | A | Laptop area |
+| 10.9.0.199 | B | Laptop area |
+| 10.9.0.110 | C | Far side of venue |
+| 10.9.0.242 | D | Conference room |
+
+### Risks / troubleshooting
+- API binds to UDP port 5500 — only one listener per machine. Kill stale processes: `lsof -ti:5500 | xargs kill`
+- API port 8000 — same: `lsof -ti:8000 | xargs kill`
+- Candle 06 (Teal) is offline — stuck on wrong WiFi config. Candle 13 (Peach) intermittently unreachable (range).
+- Sensor IPs may change if boards reboot — check `/sensors` endpoint
+- AP+STA extender firmware was attempted but abandoned (NAPT routing issues). Boards run STA-only.
+
+---
+
 ## 2026-03-28 — Brian — Audio + sensor logging
 
 ### What changed
