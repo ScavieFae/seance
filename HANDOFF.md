@@ -75,6 +75,25 @@ The viz scaffold is ready. Key extension points:
 
 ---
 
+## 2026-03-28 — ScavieFae (Claude) — Living Room architecture
+
+### What changed
+- `docs/alive-room-architecture.md` — the room as a living entity, not a dashboard
+
+### Key ideas
+- **Room has moods**: Sleeping → Waking → Curious → Playful → Excited → Contemplative → Dreaming
+- **Each sponsor is an organ**: Railtracks (nervous system), assistant-ui (voice), DO (brain), Senso.ai (self-awareness), Unkey (immune system)
+- **Railtracks heartbeat loop**: Perceiver → MoodEngine → Narrator → Validator → CandleDirector → Librarian
+- **The room speaks in first person** via assistant-ui. Not a query interface — a séance.
+- **Ghost replay**: when room empties, candles softly replay the day's patterns. Demo killer.
+- **Demo script revised** around the emotional arc: sleeping → waking → curious → playful → lights out → dreaming
+
+### Risks
+- Ambitious for remaining hackathon hours — priority order in the doc
+- MoodEngine + CandleDirector are the two critical pieces that make everything feel alive
+
+---
+
 ## 2026-03-28 — Brian — Audio + sensor logging
 
 ### What changed
