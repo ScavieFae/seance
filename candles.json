@@ -1,0 +1,29 @@
+{
+  "network": {
+    "ssid": "Gentle Thrills",
+    "router": "10.9.0.1",
+    "subnet": "10.9.0.0/16"
+  },
+  "candles": {
+    "candle_02": { "ip": "10.9.3.102", "mac": "08f9e0611bc7" },
+    "candle_03": { "ip": "10.9.3.103", "mac": "c8c9a339a907" },
+    "candle_04": { "ip": "10.9.3.104", "mac": "485519ec2f04" },
+    "candle_05": { "ip": "10.9.3.105", "mac": "08f9e0690c68" },
+    "candle_06": { "ip": "10.9.3.106", "mac": "485519ef0a8d" },
+    "candle_07": { "ip": "10.9.3.107", "mac": "c8c9a339a779" },
+    "candle_08": { "ip": "10.9.3.108", "mac": "c8c9a338ec00" },
+    "candle_09": { "ip": "10.9.3.109", "mac": "485519ee65c7" },
+    "candle_10": { "ip": "10.9.3.110", "mac": "485519ecd18e" },
+    "candle_11": { "ip": "10.9.3.111", "mac": "485519ecd242" },
+    "candle_12": { "ip": "10.9.3.112", "mac": "08f9e068ea07" },
+    "candle_13": { "ip": "10.9.3.113", "mac": "485519ec2429" }
+  },
+  "sensors": {
+    "esp32_a": { "port": "/dev/cu.usbserial-1110", "note": "flashed channel 11, promiscuous mode" }
+  },
+  "notes": {
+    "dead": "Candle 01 — not powering on",
+    "channel": 11,
+    "firmware": "~/esp/esp-csi/examples/get-started/csi_recv (modified: MAC filter removed, gain compensation disabled)"
+  }
+}
