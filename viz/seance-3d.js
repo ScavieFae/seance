@@ -79,17 +79,23 @@ function init() {
   camera.position.set(12, 8, 12);
   camera.lookAt(ROOM.width / 2, ROOM.height / 2, ROOM.depth / 2);
 
-  // Orbit controls — like the globe
+  // Orbit controls — full 3-axis rotation like the globe
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(ROOM.width / 2, ROOM.height / 2, ROOM.depth / 2);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
   controls.rotateSpeed = 0.5;
   controls.zoomSpeed = 0.8;
-  controls.minDistance = 4;
-  controls.maxDistance = 30;
+  controls.minDistance = 2;
+  controls.maxDistance = 40;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.3;
+  // Unlock full rotation — no polar angle clamp
+  controls.minPolarAngle = 0;
+  controls.maxPolarAngle = Math.PI;
+  // Enable panning in screen space (all axes)
+  controls.enablePan = true;
+  controls.screenSpacePanning = true;
 
   // Ambient light (very dim — most light comes from candles)
   const ambient = new THREE.AmbientLight(0x111111, 0.5);
