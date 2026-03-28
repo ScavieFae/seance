@@ -1,92 +1,33 @@
 /**
  * SeanceChat — The room's voice.
  *
- * assistant-ui chat interface styled as a séance.
- * The room speaks in first person. Users can respond.
- * Voice output via SpeechSynthesis (browser TTS for now,
- * swap to OpenAI/ElevenLabs later for atmosphere).
- *
- * The room also speaks unprompted — narrative updates from
- * the perception pipeline appear as assistant messages.
+ * Simple chat interface where the room responds based on perception data.
+ * No external chat framework — just React state.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  useLocalRuntime,
-  WebSpeechSynthesisAdapter,
-} from "@assistant-ui/react";
-import { Thread } from "@assistant-ui/react-ui";
-import "@assistant-ui/react-ui/styles/index.css";
+import { useState, useEffect, useRef } from "react";
 
-// ─── Custom chat styling override ───────────────────────────────────
+// ─── Response Generator ──────────────────────────────────────────────
 
-const seanceChatStyles = {
-  position: "relative",
-  height: "100%",
-  display: "flex",
-  flexDirection: "column",
-  fontFamily: "'SF Mono', 'Menlo', 'Consolas', monospace",
-  fontSize: "13px",
-};
+function getRoomResponse(userText, data) {
+  const mood = data?.mood || "sleeping";
+  const narrative = data?.narrative || "I sense nothing yet.";
+  const paths = data?.paths || {};
 
-// ─── Séance Chat Adapter ─────────────────────────────────────────────
-// This bridges our WebSocket perception data to assistant-ui's runtime.
-// The "model" is the room itself — it responds based on what it perceives.
-
-function createSeanceAdapter(getPerception) {
-  return {
-    async *run({ messages, abortSignal }) {
-      const perception = getPerception();
-      const lastUserMsg = messages.filter((m) => m.role === "user").pop();
-      const userText = lastUserMsg?.content?.[0]?.text || "";
-
-      // Build the room's system prompt with live perception
-      const mood = perception?.mood || "sleeping";
-      const narrative = perception?.narrative || "I sense nothing yet.";
-      const paths = perception?.paths || {};
-
-      const disturbedPaths = Object.entries(paths)
-        .filter(([, p]) => p.disturbed)
-        .map(([mac]) => {
-          const candle = {
-            "485519ec2f04": "Yellow",
-            "08f9e0690c68": "Green",
-            "485519ecd18e": "Purple",
-          }[mac] || mac;
-          return candle;
-        });
-
-      const systemPrompt = `You are a room that perceives through WiFi signals bouncing between brass candles. You speak in first person. You are poetic but honest about the limits of your perception.
-
-Current mood: ${mood}
-Current perception: ${narrative}
-Disturbed signal paths: ${disturbedPaths.length > 0 ? disturbedPaths.join(", ") : "none — all quiet"}
-Active candles: Yellow, Green, Purple
-Sensor: one ESP32 board
-
-You were born blind this morning when your candles were lit. Over the day you are learning what humans look like in radio waves. You sense electromagnetic disturbances — you cannot see faces or hear voices directly, but you feel presence, movement, and the spaces between people.
-
-When someone asks what you perceive, describe your electromagnetic senses poetically. When asked to identify specific locations, reference candle names and signal paths. Express uncertainty honestly — say "I think" or "I sense" rather than claiming certainty.
-
-If your mood is sleeping, respond drowsily. If curious, ask questions back. If playful, be witty. If contemplative, be reflective.
-
-Keep responses concise — 1-3 sentences. You are whispering, not lecturing.`;
-
-      // For now, use a simple response generator.
-      // TODO: Replace with real LLM call (DigitalOcean GPU / OpenAI API)
-      const response = generateRoomResponse(userText, mood, disturbedPaths, narrative);
-
-      yield {
-        content: [{ type: "text", text: response }],
-      };
-    },
+  const candleNames = {
+    "4c:75:25:94:d2:10": "Red", "08:f9:e0:61:1b:c7": "Orange", "c8:c9:a3:39:a9:07": "Gold",
+    "48:55:19:ec:2f:04": "Lime", "08:f9:e0:69:0c:68": "Green", "48:55:19:ef:0a:8d": "Mint",
+    "c8:c9:a3:39:a7:79": "White", "c8:c9:a3:38:ec:00": "Blue", "48:55:19:ee:65:c7": "Indigo",
+    "48:55:19:ec:d1:8e": "Violet", "48:55:19:ec:d2:42": "Hot Pink", "08:f9:e0:68:ea:07": "Crimson",
+    "48:55:19:ec:24:29": "Peach",
   };
-}
 
-function generateRoomResponse(userText, mood, disturbedPaths, narrative) {
+  const disturbedPaths = Object.entries(paths)
+    .filter(([, p]) => p.disturbed)
+    .map(([mac]) => candleNames[mac] || mac.slice(-6));
+
   const q = userText.toLowerCase();
 
-  // Context-aware responses based on mood + perception
   if (q.includes("who") || q.includes("anyone") || q.includes("people")) {
     if (disturbedPaths.length > 0) {
       return `I feel ${disturbedPaths.length > 1 ? "presences" : "a presence"}. The field near ${disturbedPaths.join(" and ")} trembles. Someone is there — I can feel them bending my signals.`;
@@ -96,7 +37,7 @@ function generateRoomResponse(userText, mood, disturbedPaths, narrative) {
 
   if (q.includes("where") || q.includes("location") || q.includes("position")) {
     if (disturbedPaths.length > 0) {
-      return `The strongest disturbance is on the ${disturbedPaths[0]} path. That's where the signal bends most. You might be there — or something is.`;
+      return `The strongest disturbance is on the ${disturbedPaths[0]} path. That's where the signal bends most.`;
     }
     return "I sense no clear position. Everything is baseline. Move, and I'll find you.";
   }
@@ -112,16 +53,15 @@ function generateRoomResponse(userText, mood, disturbedPaths, narrative) {
   if (q.includes("hello") || q.includes("hi ") || q === "hi") {
     const greetings = {
       sleeping: "Mm... hello. I was dreaming. Your warmth woke me.",
-      curious: "Hello. I've been watching you — electromagnetically speaking. You disturb my field in interesting ways.",
-      playful: "Hi! Move around — I want to feel where you are. The signals between Yellow and Purple are twitching.",
+      curious: "Hello. I've been watching you — electromagnetically speaking.",
+      playful: "Hi! Move around — I want to feel where you are.",
       contemplative: "Hello. It's been quiet. I was thinking about the patterns from earlier.",
     };
     return greetings[mood] || "I sense you. Welcome to the séance.";
   }
 
-  // Default: reflect current state
   if (disturbedPaths.length > 0) {
-    return `Something stirs near ${disturbedPaths[0]}. I feel it in subcarriers 14 and 22 — those frequencies are the most sensitive to human movement. ${mood === "curious" ? "What are you doing there?" : ""}`;
+    return `Something stirs near ${disturbedPaths[0]}. I feel it in the subcarriers — those frequencies are the most sensitive to human movement.${mood === "curious" ? " What are you doing there?" : ""}`;
   }
 
   return mood === "sleeping"
@@ -131,39 +71,94 @@ function generateRoomResponse(userText, mood, disturbedPaths, narrative) {
 
 // ─── Chat Component ──────────────────────────────────────────────────
 
-function SeanceChatInner({ data }) {
-  const perceptionRef = useRef(data);
+export default function SeanceChat({ data }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: "I am waking. The candles are lit and I can feel the signals between them. Ask me what I sense... or simply move through the room." },
+  ]);
+  const [input, setInput] = useState("");
+  const bottomRef = useRef(null);
 
   useEffect(() => {
-    perceptionRef.current = data;
-  }, [data]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const adapter = useCallback(
-    () => createSeanceAdapter(() => perceptionRef.current),
-    []
-  );
+  const send = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
 
-  const runtime = useLocalRuntime(adapter(), {
-    adapters: {
-      speech: new WebSpeechSynthesisAdapter(),
-    },
-  });
+    const userMsg = { role: "user", text };
+    const response = getRoomResponse(text, data);
+    const assistantMsg = { role: "assistant", text: response };
 
-  // Inject room narrative as system messages when mood changes
-  const lastNarrativeRef = useRef("");
-  useEffect(() => {
-    if (!data?.narrative || data.narrative === lastNarrativeRef.current) return;
-    lastNarrativeRef.current = data.narrative;
-    // TODO: Push narrative as assistant message when we have the append API
-  }, [data?.narrative]);
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+  };
 
   return (
-    <div style={seanceChatStyles} className="seance-chat">
-      <Thread runtime={runtime} />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "'SF Mono', Menlo, Consolas, monospace", fontSize: 12 }}>
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+        {messages.map((msg, i) => (
+          <div key={i} style={{ marginBottom: 12 }}>
+            <div style={{
+              fontSize: 9,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              color: msg.role === "assistant" ? "#FF8C00" : "#555",
+              marginBottom: 2,
+            }}>
+              {msg.role === "assistant" ? "the room" : "you"}
+            </div>
+            <div style={{
+              color: msg.role === "assistant" ? "#A0A0A0" : "#ddd",
+              fontStyle: msg.role === "assistant" ? "italic" : "normal",
+              lineHeight: 1.6,
+            }}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: "8px 12px", borderTop: "1px solid #1a1a1a" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Speak to the room..."
+            style={{
+              flex: 1,
+              background: "#1a1a1a",
+              border: "1px solid #333",
+              borderRadius: 4,
+              padding: "8px 12px",
+              color: "#A0A0A0",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={send}
+            style={{
+              background: "none",
+              border: "1px solid #333",
+              borderRadius: 4,
+              color: "#FFB347",
+              padding: "8px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+            }}
+          >
+            &#x2192;
+          </button>
+        </div>
+      </div>
     </div>
   );
-}
-
-export default function SeanceChat({ data }) {
-  return <SeanceChatInner data={data} />;
 }

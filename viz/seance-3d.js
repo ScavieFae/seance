@@ -13,22 +13,43 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.170.0/exampl
 
 // ─── Config ──────────────────────────────────────────────────────────
 
-const WS_URL = `ws://${location.hostname || "localhost"}:8765`;
+const WS_URL = `ws://${location.hostname || "localhost"}:8000/ws`;
 const RECONNECT_INTERVAL = 3000;
 
-// Room dimensions in meters (approximate hackathon room)
-const ROOM = { width: 8, depth: 6, height: 3 };
+// Room dimensions in meters
+// Conference room is ~4x4m at the back, our table is ~2m in front of it
+const ROOM = { width: 8, depth: 8, height: 3 };
 
-// Candle positions in room coordinates (meters from corner)
-// Update these after placing candles at the venue!
+// Candle positions mapped from SCHEMATIC.md
+// Conference room: back wall at z=1, rows at z=1,2,3. Door at z=4.
+// Our table at z=6. x: left=1.5, center=4, right=6.5
 const CANDLES = {
-  "485519ec2f04": { id: "04", name: "Yellow",  x: 2.0, y: 0.8, z: 1.8, color: 0xdcff00 },
-  "08f9e0690c68": { id: "05", name: "Green",   x: 5.2, y: 0.8, z: 1.5, color: 0x00ff00 },
-  "485519ecd18e": { id: "10", name: "Purple",  x: 4.0, y: 0.8, z: 4.2, color: 0x8000ff },
+  // Conference room — back row (z=1)
+  "08:f9:e0:69:0c:68": { id: "05", name: "Green",     x: 1.5, y: 0.8, z: 1.0, color: 0x00ff00 },
+  "48:55:19:ec:d1:8e": { id: "10", name: "Violet",    x: 4.0, y: 0.8, z: 1.0, color: 0xc800ff },
+  "c8:c9:a3:39:a9:07": { id: "03", name: "Gold",      x: 6.5, y: 0.8, z: 1.0, color: 0xffc800 },
+  // Conference room — middle row (z=2)
+  "48:55:19:ec:2f:04": { id: "04", name: "Lime",      x: 1.5, y: 0.8, z: 2.0, color: 0xb4ff00 },
+  "08:f9:e0:61:1b:c7": { id: "02", name: "Orange",    x: 4.0, y: 0.8, z: 2.0, color: 0xff5000 },
+  "4c:75:25:94:d2:10": { id: "01", name: "Red",       x: 6.5, y: 0.8, z: 2.0, color: 0xff0000 },
+  // Conference room — front row (z=3)
+  "08:f9:e0:68:ea:07": { id: "12", name: "Crimson",   x: 1.5, y: 0.8, z: 3.0, color: 0xff0032 },
+  "c8:c9:a3:38:ec:00": { id: "08", name: "Blue",      x: 4.0, y: 0.8, z: 3.0, color: 0x0000ff },
+  "48:55:19:ec:d2:42": { id: "11", name: "Hot Pink",  x: 6.5, y: 0.8, z: 3.0, color: 0xff0096 },
+  // Outside conference room door (z=4.5)
+  "48:55:19:ec:24:29": { id: "13", name: "Peach",     x: 4.0, y: 0.8, z: 4.5, color: 0xff9632 },
+  // Our table — outer edge (z=6.5)
+  "48:55:19:ee:65:c7": { id: "09", name: "Indigo",    x: 2.5, y: 0.8, z: 6.5, color: 0x5000ff },
+  "c8:c9:a3:39:a7:79": { id: "07", name: "White",     x: 5.5, y: 0.8, z: 6.5, color: 0xffffff },
+  // Offline
+  // "48:55:19:ef:0a:8d": { id: "06", name: "Mint", x: 0, y: 0, z: 0, color: 0x00ffb4 },
 };
 
 const SENSORS = {
-  esp32_a: { x: 0.8, y: 1.2, z: 5.4 },
+  "10.9.0.237": { x: 3.0, y: 1.2, z: 6.0 },  // Board A — our table
+  "10.9.0.199": { x: 5.0, y: 1.2, z: 6.0 },  // Board B — our table
+  "10.9.0.110": { x: 1.5, y: 1.2, z: 2.0 },  // Board C — conf room near Lime
+  "10.9.0.242": { x: 6.5, y: 1.2, z: 1.0 },  // Board D — conf room near Gold
 };
 
 const PALETTE = {

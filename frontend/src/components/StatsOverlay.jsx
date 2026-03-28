@@ -36,13 +36,28 @@ export default function StatsOverlay({ data, connected }) {
           <h2 style={styles.sectionTitle}>&#x25C8; Candle Paths</h2>
           {Object.entries(CANDLES).map(([mac, candle]) => {
             const pd = paths[mac];
-            const ratio = pd?.variance_ratio?.toFixed(1) || "—";
+            const ratio = pd?.variance_ratio;
+            // Log-scale intensity bar: 0-100%
+            const pct = ratio ? Math.min(100, Math.round(Math.log10(Math.max(1, ratio)) / 3 * 100)) : 0;
             const rssi = pd?.rssi != null ? Math.round(pd.rssi) : "—";
             return (
               <Row
                 key={mac}
                 label={<span style={{ color: candle.color }}>{candle.name}</span>}
-                value={`var=${ratio} rssi=${rssi}`}
+                value={
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{
+                      width: 40, height: 4, background: "#1a1a1a", borderRadius: 2, overflow: "hidden",
+                      display: "inline-block",
+                    }}>
+                      <span style={{
+                        width: `${pct}%`, height: "100%", display: "block", borderRadius: 2,
+                        background: pct > 60 ? "#FF5014" : pct > 30 ? "#FF8C00" : "#333",
+                      }} />
+                    </span>
+                    <span style={{ fontSize: 9, minWidth: 28 }}>{rssi}dB</span>
+                  </span>
+                }
                 className={pd ? activityClass(pd.variance_ratio) : ""}
               />
             );

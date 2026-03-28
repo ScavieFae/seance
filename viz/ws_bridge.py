@@ -52,9 +52,19 @@ HTTP_PORT = 8766
 CSI_PADDING_PAIRS = 6
 
 ROOM_CANDLES = {
-    "485519ec2f04": "Yellow",
-    "08f9e0690c68": "Green",
-    "485519ecd18e": "Purple",
+    "4c752594d210": "Red 01",
+    "08f9e0611bc7": "Orange 02",
+    "c8c9a339a907": "Gold 03",
+    "485519ec2f04": "Lime 04",
+    "08f9e0690c68": "Green 05",
+    "485519ef0a8d": "Mint 06",
+    "c8c9a339a779": "White 07",
+    "c8c9a338ec00": "Blue 08",
+    "485519ee65c7": "Indigo 09",
+    "485519ecd18e": "Violet 10",
+    "485519ecd242": "Hot Pink 11",
+    "08f9e068ea07": "Crimson 12",
+    "485519ec2429": "Peach 13",
 }
 
 VARIANCE_WINDOW = 20
@@ -79,6 +89,13 @@ class PathState:
     def add(self, rssi, amplitudes):
         self.packet_count += 1
         self.rssi_buf.append(rssi)
+        # Normalize amplitude length — real CSI packets can vary in subcarrier count
+        if self.amp_buf and len(amplitudes) != len(self.amp_buf[-1]):
+            target_len = len(self.amp_buf[-1])
+            if len(amplitudes) > target_len:
+                amplitudes = amplitudes[:target_len]
+            else:
+                amplitudes = amplitudes + [0.0] * (target_len - len(amplitudes))
         self.amp_buf.append(amplitudes)
         if len(self.amp_buf) > VARIANCE_WINDOW * 3:
             self.amp_buf = self.amp_buf[-VARIANCE_WINDOW * 2:]
@@ -87,7 +104,10 @@ class PathState:
     def calibrate(self):
         if len(self.amp_buf) < 5 or np is None:
             return
-        arr = np.array(self.amp_buf[-BASELINE_WINDOW:])
+        try:
+            arr = np.array(self.amp_buf[-BASELINE_WINDOW:])
+        except ValueError:
+            return
         self.baseline_mean = np.mean(arr, axis=0)
         self.baseline_var = np.var(arr, axis=0)
         self.baseline_rssi = float(np.mean(self.rssi_buf[-BASELINE_WINDOW:]))
@@ -106,7 +126,18 @@ class PathState:
                 "hottest_subcarriers": [],
             }
 
-        recent = np.array(self.amp_buf[-VARIANCE_WINDOW:])
+        try:
+            recent = np.array(self.amp_buf[-VARIANCE_WINDOW:])
+        except ValueError:
+            return {
+                "variance_ratio": 1.0,
+                "rssi": self.rssi_buf[-1] if self.rssi_buf else -99,
+                "rssi_delta": 0,
+                "packets": self.packet_count,
+                "disturbed": False,
+                "amp_mean": 0,
+                "hottest_subcarriers": [],
+            }
         recent_var = np.var(recent, axis=0)
         recent_rssi = float(np.mean(self.rssi_buf[-VARIANCE_WINDOW:]))
 

@@ -1,25 +1,32 @@
 /**
- * RoomView — 3D room visualization using React Three Fiber.
- * Renders the wireframe room, candle nodes, sensor, and signal paths.
+ * RoomView — 3D conference room visualization using React Three Fiber.
+ * Renders wireframe room, candle nodes with labels, sensors, and signal paths.
+ * Glow intensity uses log scale to prevent blowout on high variance.
  */
 
 import { useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
 import { ROOM, CANDLES, SENSORS } from "../lib/config";
 
-function activityColor(ratio) {
-  if (ratio < 1.5) return "#1a1008";
-  if (ratio < 3.0) return "#FF8C00";
-  if (ratio < 6.0) return "#FF5014";
-  if (ratio < 12.0) return "#DA70D6";
+// Log-scale mapping: variance 1-1000+ → 0-1 normalized intensity
+function normalizeVar(ratio) {
+  if (ratio <= 1) return 0;
+  return Math.min(1, Math.log10(ratio) / 3); // log10(1000) = 3
+}
+
+function activityColor(norm) {
+  if (norm < 0.15) return "#1a1008";
+  if (norm < 0.35) return "#FF8C00";
+  if (norm < 0.6) return "#FF5014";
+  if (norm < 0.8) return "#DA70D6";
   return "#1E90FF";
 }
 
 // ─── Candle Node ─────────────────────────────────────────────────────
 
-function CandleNode({ config, pathData, smoothedRef }) {
+function CandleNode({ config, smoothedRef, onClick, selected }) {
   const sphereRef = useRef();
   const glowRef = useRef();
   const lightRef = useRef();
@@ -27,62 +34,85 @@ function CandleNode({ config, pathData, smoothedRef }) {
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     const sm = smoothedRef.current[config.mac] || { variance_ratio: 1.0 };
-    const ratio = sm.variance_ratio;
-    const disturbed = ratio > 3.0;
-    const breathe = 1 + Math.sin(t * 2 + config.x * 5) * 0.1;
+    const norm = normalizeVar(sm.variance_ratio);
+    const breathe = 1 + Math.sin(t * 2 + config.x * 5) * 0.05;
 
     if (sphereRef.current) {
-      const s = disturbed ? 1.0 + ratio * 0.05 : 0.8 * breathe;
-      sphereRef.current.scale.setScalar(s);
+      const s = (0.06 + norm * 0.06) * breathe;
+      sphereRef.current.scale.setScalar(s / 0.06); // relative to base geometry
     }
     if (glowRef.current) {
-      const gs = disturbed ? 1.5 + ratio * 0.15 : 1.0 * breathe;
-      glowRef.current.scale.setScalar(gs);
-      glowRef.current.material.opacity = disturbed
-        ? 0.12 + ratio * 0.01
-        : 0.06 * breathe;
+      // Glow radius: 0.15 at rest → 0.6 max (capped)
+      const gs = (0.15 + norm * 0.45) * breathe;
+      glowRef.current.scale.setScalar(gs / 0.15);
+      glowRef.current.material.opacity = 0.04 + norm * 0.12;
       glowRef.current.material.color.set(
-        disturbed ? activityColor(ratio) : config.color
+        norm > 0.15 ? activityColor(norm) : config.color
       );
     }
     if (lightRef.current) {
-      lightRef.current.intensity = disturbed ? 0.8 + ratio * 0.1 : 0.3 * breathe;
-      lightRef.current.color.set(disturbed ? activityColor(ratio) : config.color);
-      lightRef.current.distance = disturbed ? 5 + ratio * 0.5 : 3;
+      lightRef.current.intensity = 0.2 + norm * 0.8;
+      lightRef.current.color.set(norm > 0.15 ? activityColor(norm) : config.color);
+      lightRef.current.distance = 1.5 + norm * 2;
     }
   });
 
   return (
-    <group position={[config.x, config.y, config.z]}>
-      <mesh ref={sphereRef}>
-        <sphereGeometry args={[0.12, 16, 16]} />
+    <group position={[config.x, config.y, config.z]} onClick={(e) => { e.stopPropagation(); onClick?.(config.mac); }} style={{ cursor: "pointer" }}>
+      {/* Core sphere — clickable */}
+      <mesh ref={sphereRef} onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
+        <sphereGeometry args={[0.06, 16, 16]} />
         <meshBasicMaterial color={config.color} />
       </mesh>
+      {/* Selection ring */}
+      {selected && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.18, 0.22, 32]} />
+          <meshBasicMaterial color={config.color} transparent opacity={0.6} />
+        </mesh>
+      )}
+      {/* Glow sphere */}
       <mesh ref={glowRef}>
-        <sphereGeometry args={[0.4, 16, 16]} />
+        <sphereGeometry args={[0.15, 16, 16]} />
         <meshBasicMaterial
           color={config.color}
           transparent
-          opacity={0.08}
+          opacity={0.06}
           depthWrite={false}
         />
       </mesh>
+      {/* Point light */}
       <pointLight
         ref={lightRef}
         color={config.color}
-        intensity={0.5}
-        distance={4}
+        intensity={0.3}
+        distance={2}
         decay={2}
       />
+      {/* Label — always faces camera */}
+      <Billboard position={[0, 0.2, 0]}>
+        <Text
+          fontSize={0.1}
+          color={config.color}
+          anchorX="center"
+          anchorY="bottom"
+          outlineWidth={0.005}
+          outlineColor="#000000"
+        >
+          {config.name}
+        </Text>
+      </Billboard>
     </group>
   );
 }
 
 // ─── Signal Path ─────────────────────────────────────────────────────
 
-function SignalPath({ from, to, mac, smoothedRef }) {
+function SignalPath({ from, to, mac, sensorIp, candleColor, sensorPathsRef }) {
   const lineRef = useRef();
   const glowRef = useRef();
+  const tubeRef = useRef();
+  const smoothed = useRef(1.0);
 
   const points = useMemo(
     () => [new THREE.Vector3(from.x, from.y, from.z), new THREE.Vector3(to.x, to.y, to.z)],
@@ -90,31 +120,115 @@ function SignalPath({ from, to, mac, smoothedRef }) {
   );
   const geometry = useMemo(() => new THREE.BufferGeometry().setFromPoints(points), [points]);
 
-  useFrame(() => {
-    const sm = smoothedRef.current[mac] || { variance_ratio: 1.0 };
-    const ratio = sm.variance_ratio;
-    const disturbed = ratio > 3.0;
+  const curve = useMemo(
+    () => new THREE.LineCurve3(
+      new THREE.Vector3(from.x, from.y, from.z),
+      new THREE.Vector3(to.x, to.y, to.z)
+    ),
+    [from, to]
+  );
+  const tubeGeom = useMemo(() => new THREE.TubeGeometry(curve, 1, 0.02, 6, false), [curve]);
+
+  useFrame(({ clock }) => {
+    // Get per-sensor-per-candle variance (real data for this specific path)
+    const sensorData = sensorPathsRef.current?.[sensorIp]?.[mac];
+    const rawRatio = sensorData?.variance_ratio ?? 1.0;
+    smoothed.current += (rawRatio - smoothed.current) * 0.15;
+    const norm = normalizeVar(smoothed.current);
+    const t = clock.elapsedTime;
 
     if (lineRef.current) {
-      lineRef.current.material.opacity = disturbed ? 0.05 : 0.12;
+      lineRef.current.material.opacity = 0.04 + norm * 0.1;
     }
     if (glowRef.current) {
-      glowRef.current.material.opacity = disturbed
-        ? Math.min(0.6, 0.1 + ratio * 0.04)
-        : 0;
-      glowRef.current.material.color.set(activityColor(ratio));
+      glowRef.current.material.opacity = norm > 0.15 ? norm * 0.6 : 0;
+      glowRef.current.material.color.set(norm > 0.5 ? activityColor(norm) : candleColor);
+    }
+    if (tubeRef.current) {
+      const pulse = norm > 0.15 ? 0.5 + Math.sin(t * 4 + from.x * 3) * 0.2 : 0;
+      tubeRef.current.material.opacity = norm > 0.15 ? norm * pulse : 0;
+      tubeRef.current.material.color.set(norm > 0.5 ? activityColor(norm) : candleColor);
+      tubeRef.current.visible = norm > 0.1;
     }
   });
 
   return (
     <>
+      {/* Faint base line */}
       <line ref={lineRef} geometry={geometry}>
-        <lineBasicMaterial color="#1a1008" transparent opacity={0.12} />
+        <lineBasicMaterial color="#2a2018" transparent opacity={0.04} />
       </line>
+      {/* Bright line on activity */}
       <line ref={glowRef} geometry={geometry}>
-        <lineBasicMaterial color="#FF8C00" transparent opacity={0} />
+        <lineBasicMaterial color={candleColor} transparent opacity={0} />
       </line>
+      {/* Glowing tube on disturbance */}
+      <mesh ref={tubeRef} geometry={tubeGeom} visible={false}>
+        <meshBasicMaterial color={candleColor} transparent opacity={0} depthWrite={false} />
+      </mesh>
     </>
+  );
+}
+
+// ─── Door Indicator ──────────────────────────────────────────────────
+
+function DoorIndicator() {
+  // Door in front of Crimson (x=3.2)
+  const doorX = 3.2;
+  const doorW = 1.0;
+  return (
+    <group>
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            array={new Float32Array([
+              doorX - doorW / 2, 0, 0,
+              doorX - doorW / 2, 2.1, 0,
+              doorX + doorW / 2, 2.1, 0,
+              doorX + doorW / 2, 0, 0,
+            ])}
+            count={4}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#FF9632" transparent opacity={0.3} />
+      </line>
+      <Billboard position={[doorX, -0.15, 0]}>
+        <Text
+          fontSize={0.1}
+          color="#555"
+          anchorX="center"
+        >
+          DOOR
+        </Text>
+      </Billboard>
+    </group>
+  );
+}
+
+// ─── Our Table (main venue) ──────────────────────────────────────────
+
+function OurTable() {
+  // Left of door, further into venue
+  const tx = 1.25, tz = -2.5;
+  const tw = 2.2, td = 1.2, th = 0.72;
+  return (
+    <group>
+      <mesh position={[tx, th / 2, tz]}>
+        <boxGeometry args={[tw, 0.04, td]} />
+        <meshBasicMaterial color="#1a1610" transparent opacity={0.3} />
+      </mesh>
+      <lineSegments position={[tx, th / 2, tz]}>
+        <edgesGeometry args={[new THREE.BoxGeometry(tw, 0.04, td)]} />
+        <lineBasicMaterial color="#FF9632" transparent opacity={0.25} />
+      </lineSegments>
+      <Billboard position={[tx, 0.9, tz]}>
+        <Text fontSize={0.08} color="#444" anchorX="center">
+          OUR TABLE
+        </Text>
+      </Billboard>
+    </group>
   );
 }
 
@@ -126,9 +240,8 @@ function RoomBox() {
     <group>
       {/* Floor grid */}
       <gridHelper
-        args={[Math.max(w, d), 16, "#1a1008", "#0f0e0c"]}
+        args={[Math.max(w, d), 12, "#1a1008", "#0f0e0c"]}
         position={[w / 2, 0, d / 2]}
-        rotation={[0, 0, 0]}
       />
       {/* Wireframe edges */}
       <lineSegments position={[w / 2, h / 2, d / 2]}>
@@ -143,19 +256,31 @@ function RoomBox() {
 
 function SensorNode({ config }) {
   return (
-    <mesh position={[config.x, config.y, config.z]}>
-      <octahedronGeometry args={[0.08, 0]} />
-      <meshBasicMaterial color="#3A3A3A" transparent opacity={0.6} />
-    </mesh>
+    <group position={[config.x, config.y, config.z]}>
+      <mesh>
+        <octahedronGeometry args={[0.05, 0]} />
+        <meshBasicMaterial color="#3A3A3A" transparent opacity={0.6} />
+      </mesh>
+      <Billboard position={[0, 0.12, 0]}>
+        <Text
+          fontSize={0.07}
+          color="#555"
+          anchorX="center"
+          anchorY="bottom"
+        >
+          {config.label}
+        </Text>
+      </Billboard>
+    </group>
   );
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────
 
-function Scene({ data }) {
+function Scene({ data, onCandleClick, selectedCandle }) {
   const smoothedRef = useRef({});
+  const sensorPathsRef = useRef({});
 
-  // Smooth incoming data
   useFrame(() => {
     const paths = data?.paths || {};
     for (const [mac, pd] of Object.entries(paths)) {
@@ -163,30 +288,36 @@ function Scene({ data }) {
         smoothedRef.current[mac] = { variance_ratio: 1.0, rssi: -50 };
       }
       const s = smoothedRef.current[mac];
-      s.variance_ratio += (pd.variance_ratio - s.variance_ratio) * 0.08;
-      s.rssi += ((pd.rssi || -50) - s.rssi) * 0.08;
+      s.variance_ratio += (pd.variance_ratio - s.variance_ratio) * 0.3;
+      s.rssi += ((pd.rssi || -50) - s.rssi) * 0.3;
     }
-    // Decay absent paths
     for (const [mac, s] of Object.entries(smoothedRef.current)) {
       if (!paths[mac]) {
-        s.variance_ratio += (1.0 - s.variance_ratio) * 0.02;
+        s.variance_ratio += (1.0 - s.variance_ratio) * 0.05;
       }
+    }
+    // Store per-sensor data for signal paths
+    if (data?.sensor_paths) {
+      sensorPathsRef.current = data.sensor_paths;
     }
   });
 
   return (
     <>
-      <ambientLight intensity={0.3} color="#111111" />
-      <fog attach="fog" args={["#0A0A0A", 15, 40]} />
+      <ambientLight intensity={0.15} color="#111111" />
+      <fog attach="fog" args={["#0A0A0A", 8, 25]} />
 
       <RoomBox />
+      <DoorIndicator />
+      <OurTable />
 
       {Object.entries(CANDLES).map(([mac, candle]) => (
         <CandleNode
           key={mac}
           config={{ ...candle, mac }}
-          pathData={data?.paths?.[mac]}
           smoothedRef={smoothedRef}
+          onClick={onCandleClick}
+          selected={selectedCandle === mac}
         />
       ))}
 
@@ -201,7 +332,9 @@ function Scene({ data }) {
             from={candle}
             to={sensor}
             mac={mac}
-            smoothedRef={smoothedRef}
+            sensorIp={sid}
+            candleColor={candle.color}
+            sensorPathsRef={sensorPathsRef}
           />
         ))
       )}
@@ -211,30 +344,28 @@ function Scene({ data }) {
 
 // ─── Exported Component ──────────────────────────────────────────────
 
-export default function RoomView({ data }) {
+export default function RoomView({ data, onCandleClick, selectedCandle }) {
   const { width: w, height: h, depth: d } = ROOM;
 
   return (
     <Canvas
       camera={{
-        position: [12, 8, 12],
-        fov: 45,
+        position: [w / 2 + 5, 5, -3],
+        fov: 40,
         near: 0.1,
         far: 100,
       }}
       style={{ background: "#0A0A0A" }}
     >
-      <Scene data={data} />
+      <Scene data={data} onCandleClick={onCandleClick} selectedCandle={selectedCandle} />
       <OrbitControls
-        target={[w / 2, h / 2, d / 2]}
+        target={[w / 2, 0, d / 2]}
         enableDamping
         dampingFactor={0.05}
         rotateSpeed={0.5}
         zoomSpeed={0.8}
         minDistance={2}
-        maxDistance={40}
-        autoRotate
-        autoRotateSpeed={0.3}
+        maxDistance={20}
         minPolarAngle={0}
         maxPolarAngle={Math.PI}
         enablePan

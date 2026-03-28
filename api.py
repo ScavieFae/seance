@@ -91,9 +91,16 @@ class PathState:
         self.baseline_rssi = None
         self.calibrated = False
         self.disturbance_count = 0
+        # Live tracking — latest values, updated every packet
+        self.last_rssi = -99
+        self.last_variance = 0.0
+        self.last_time = 0.0
 
     def add(self, rssi, amplitudes):
+        import numpy as np
         self.packet_count += 1
+        self.last_rssi = rssi
+        self.last_time = time.time()
         self.rssi_buf.append(rssi)
         if self.amp_buf and len(amplitudes) != len(self.amp_buf[-1]):
             target_len = len(self.amp_buf[-1])
@@ -102,6 +109,10 @@ class PathState:
             else:
                 amplitudes = amplitudes + [0.0] * (target_len - len(amplitudes))
         self.amp_buf.append(amplitudes)
+        # Compute instant variance from this packet's subcarriers
+        if amplitudes:
+            arr = np.array(amplitudes)
+            self.last_variance = float(np.var(arr))
         if len(self.amp_buf) > VARIANCE_WINDOW * 3:
             self.amp_buf = self.amp_buf[-VARIANCE_WINDOW * 2:]
             self.rssi_buf = self.rssi_buf[-VARIANCE_WINDOW * 2:]
@@ -161,6 +172,25 @@ class PathState:
             "rssi_delta": round(rssi_delta, 1),
             "packets": self.packet_count,
             "disturbed": disturbed,
+        }
+
+    def live(self):
+        """Latest raw values — no smoothing, no rolling window."""
+        import numpy as np
+        # Short-window variance (last 5 packets) for motion detection
+        short_var = 0.0
+        if len(self.amp_buf) >= 3:
+            try:
+                recent = np.array(self.amp_buf[-5:])
+                short_var = float(np.mean(np.var(recent, axis=0)))
+            except ValueError:
+                pass
+        return {
+            "rssi": self.last_rssi,
+            "variance": round(self.last_variance, 2),
+            "short_variance": round(short_var, 2),
+            "packets": self.packet_count,
+            "age_ms": round((time.time() - self.last_time) * 1000) if self.last_time else None,
         }
 
 
@@ -319,8 +349,19 @@ async def ws_broadcast():
     else:
         narrative = "The electromagnetic field is calm."
 
+    # Build per-sensor-per-candle data for signal path visualization
+    per_sensor = {}
+    for sensor_ip, paths in sensor_paths.items():
+        sensor_data = {}
+        for mac, ps in paths.items():
+            if mac in CANDLE_MACS:
+                sensor_data[mac] = ps.snapshot()
+        if sensor_data:
+            per_sensor[sensor_ip] = sensor_data
+
     payload = {
         "paths": path_data,
+        "sensor_paths": per_sensor,
         "meta": {
             "packets_per_sec": round(pps),
             "unique_macs": len(all_macs),
@@ -393,10 +434,35 @@ def set_candle(candle_id, color_rgb=None, bri=51):
 
 # ─── FastAPI App ──────────────────────────────────────────────────────
 
+# ─── Background Pinger ────────────────────────────────────────────────
+
+pinger_running = False
+
+async def candle_pinger(interval=2.0):
+    """Continuously ping all candles to generate CSI traffic."""
+    global pinger_running
+    pinger_running = True
+    print(f"[api] Pinger started — sweeping candles every {interval}s")
+    while pinger_running:
+        for key, c in CANDLE_CONFIG["candles"].items():
+            if not pinger_running:
+                break
+            try:
+                await asyncio.to_thread(
+                    lambda ip=c["ip"]: http_requests.get(f"http://{ip}/json/state", timeout=0.5)
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(interval)
+    print("[api] Pinger stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(udp_listener(mock=app.state.mock))
     yield
+    global pinger_running
+    pinger_running = False
     task.cancel()
 
 app = FastAPI(title="Séance API", lifespan=lifespan)
@@ -533,6 +599,66 @@ def csi_room(sensor_ip: str):
         label = CANDLE_MACS[mac]["name"] + " (" + CANDLE_MACS[mac]["id"] + ")" if mac in CANDLE_MACS else mac
         result[label] = ps.snapshot()
     return result
+
+
+@app.get("/csi/live")
+def csi_live():
+    """Real-time per-sensor, per-candle readings. No smoothing. Updated every packet."""
+    result = {}
+    for sensor_ip, paths in sensor_paths.items():
+        label = SENSOR_LABELS.get(sensor_ip, sensor_ip)
+        candle_data = {}
+        for mac, ps in paths.items():
+            if mac in CANDLE_MACS:
+                info = CANDLE_MACS[mac]
+                candle_data[f"{info['name']} ({info['id']})"] = ps.live()
+        if candle_data:
+            result[label] = candle_data
+    return result
+
+
+@app.get("/csi/live/{sensor_ip}")
+def csi_live_sensor(sensor_ip: str):
+    """Real-time readings for one sensor. No smoothing."""
+    if sensor_ip not in sensor_paths:
+        return {"error": "sensor not found", "available": list(sensor_stats.keys())}
+    paths = sensor_paths[sensor_ip]
+    result = {}
+    for mac, ps in paths.items():
+        if mac in CANDLE_MACS:
+            info = CANDLE_MACS[mac]
+            result[f"{info['name']} ({info['id']})"] = ps.live()
+        else:
+            result[mac] = ps.live()
+    return result
+
+
+# ─── REST: Pinger ─────────────────────────────────────────────────────
+
+pinger_task = None
+
+@app.post("/pinger/start")
+async def start_pinger(interval: float = 2.0):
+    """Start background candle pinger to generate CSI traffic."""
+    global pinger_task, pinger_running
+    if pinger_task and not pinger_task.done():
+        return {"status": "already running"}
+    pinger_running = True
+    pinger_task = asyncio.create_task(candle_pinger(interval))
+    return {"status": "started", "interval": interval}
+
+
+@app.post("/pinger/stop")
+async def stop_pinger():
+    """Stop the background candle pinger."""
+    global pinger_running
+    pinger_running = False
+    return {"status": "stopped"}
+
+
+@app.get("/pinger/status")
+def pinger_status():
+    return {"running": pinger_running}
 
 
 # ─── REST: Sweep ──────────────────────────────────────────────────────
