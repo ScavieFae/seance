@@ -46,4 +46,6 @@
 | A | 10.9.0.237 | Laptop area (main venue) |
 | B | 10.9.0.199 | Laptop area (main venue) |
 | C | 10.9.0.110 | Far side of venue |
-| D | 10.9.0.242 | Conference room |
+| D | 10.9.0.242 | Conference room — near Gold (03) |
+
+**Note:** There are two ESP32 boards in the conference room — one next to Gold (03), one next to Lime (04). Board D (10.9.0.242) is confirmed near Gold. The other is likely Board C (10.9.0.110) repositioned, or one of the laptop boards moved.
