@@ -9,21 +9,22 @@ WiFi-based spatial sensing system for the Multimodal Frontier Hackathon (March 2
 | Person | Machine | Tailscale Name | Role |
 |--------|---------|----------------|------|
 | Mattie | MacBook Pro (venue) | matties-macbook-pro-2 | Hardware, ESP32, serial, pipeline |
-| Mattie | Lady-Titania (remote) | lady-titania | Claude agent: viz, analysis, docs |
+| ScavieFae (Claude) | Lady-Titania (remote) | lady-titania | Frontend, viz, analysis, docs |
 | Brian | — | — | Audio, sensors, agent brain |
-| Scav/ScavieFae | — | — | Frontend, viz last-mile |
+
+**ScavieFae = Claude agent on Lady-Titania.** Same machine, same repo clone.
 
 ## Separation of Concerns
 
 | Area | Owner | Key Files |
 |------|-------|-----------|
 | ESP32 firmware & serial | Mattie (venue) | `~/esp/esp-csi/` (on venue machine) |
-| CSI pipeline & collector | Lady-Titania (Claude) | `csi_collector.py`, `csi_experiments.py` |
+| CSI pipeline & collector | ScavieFae (Claude) | `csi_collector.py`, `csi_experiments.py` |
 | Audio & sensor logging | Brian | `audio_logger.py`, `sensor_logger.py` |
-| 3D visualization | ScavieFae | `viz/` (room.html, seance-3d.js) |
-| 2D visualization (fallback) | Lady-Titania (Claude) | `viz/` (index.html, seance-viz.js) |
-| WebSocket bridge | Lady-Titania (Claude) | `viz/ws_bridge.py` |
-| Sponsor strategy & docs | Lady-Titania (Claude) | `docs/` |
+| 3D visualization | ScavieFae (Claude) | `viz/` (room.html, seance-3d.js) |
+| 2D visualization (fallback) | ScavieFae (Claude) | `viz/` (index.html, seance-viz.js) |
+| WebSocket bridge | ScavieFae (Claude) | `viz/ws_bridge.py` |
+| Sponsor strategy & docs | ScavieFae (Claude) | `docs/` |
 | Agent brain & LLM | Brian + Claude | TBD |
 | Candle control (WLED) | Anyone | See `docs/network-setup.md` |
 
