@@ -106,6 +106,12 @@ idf.py -p /dev/cu.usbserial-XXXXXX flash
 - `POST /json/state` with `{"seg":[{"fx":0,"col":[[R,G,B]],"bri":N}]}`
 - Map CSI metrics → candle visual state
 
+**Audio feature logging**
+- `python3 audio_logger.py` — captures from MOTU Ultralite M6 (system input)
+- Extracts amplitude (RMS, peak, dB) and spectral features (centroid, bandwidth, rolloff, dominant freq, 6-band energy) per 0.5s chunk
+- Writes timestamped JSONL to `data/audio/audio_features.jsonl`
+- ISO UTC timestamps align with CSI pipeline for cross-modal correlation
+
 **Baseline calibration**
 - Capture 5 seconds of CSI with room still (or known state)
 - Store per-candle baseline RSSI and per-subcarrier CSI fingerprint
