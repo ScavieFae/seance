@@ -1,0 +1,102 @@
+/* Séance — Layout */
+
+.seance-app {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  background: #0A0A0A;
+}
+
+/* ─── 3D Room ─────────────────────────────────── */
+
+.seance-room {
+  flex: 1;
+  position: relative;
+  cursor: grab;
+}
+
+.seance-room:active {
+  cursor: grabbing;
+}
+
+/* ─── Chat Panel ──────────────────────────────── */
+
+.seance-chat-panel {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #111111;
+  border-left: 1px solid #1a1a1a;
+}
+
+.seance-chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.seance-chat-title {
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #FFB347;
+  text-transform: uppercase;
+}
+
+.seance-chat-subtitle {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #555;
+  text-transform: uppercase;
+}
+
+.seance-chat-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── assistant-ui overrides ──────────────────── */
+
+.seance-chat .aui-root {
+  --aui-background: #111111;
+  --aui-foreground: #A0A0A0;
+  --aui-muted: #1a1a1a;
+  --aui-muted-foreground: #666;
+  --aui-border: #1a1a1a;
+  --aui-accent: #FFB347;
+  --aui-accent-foreground: #0A0A0A;
+  --aui-ring: #FF8C00;
+
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  height: 100%;
+}
+
+.seance-chat .aui-thread-message-assistant {
+  color: #A0A0A0;
+  font-style: italic;
+}
+
+.seance-chat .aui-thread-message-user {
+  color: #ddd;
+}
+
+.seance-chat .aui-composer-input {
+  background: #1a1a1a;
+  color: #A0A0A0;
+  border-color: #333;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.seance-chat .aui-composer-input::placeholder {
+  color: #444;
+}
+
+.seance-chat .aui-composer-send {
+  color: #FFB347;
+}

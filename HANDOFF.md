@@ -75,6 +75,34 @@ The viz scaffold is ready. Key extension points:
 
 ---
 
+## 2026-03-28 — ScavieFae (Claude) — React frontend scaffold
+
+### What changed
+- `frontend/` — Vite + React app with assistant-ui chat and Three.js 3D room
+- `docs/frontend-architecture.md` — architecture, layout, data contract, voice TTS docs
+
+### How it works
+- `npm run dev` in `frontend/` starts dev server on :5173
+- 3D room view (left) + séance chat (right) — both fed by same WebSocket
+- Chat uses `@assistant-ui/react` with `WebSpeechSynthesisAdapter` for browser TTS
+- Room speaks in first person via template responses (swap to LLM later)
+- `useSeanceData` hook connects to `ws://localhost:8765` with mock data fallback
+- Config in `src/lib/config.js` — candle positions, room dims, shared constants
+
+### Risks / troubleshooting
+- `npm install` needed before first run
+- assistant-ui CSS theme overrides in App.css — may need tweaking as we evolve
+- Chat responses are template-based (no LLM yet) — good enough to demo the interface
+- Thread component from `@assistant-ui/react-ui` — import path matters
+- Three.js bundled (~380KB gzipped) — fine for hackathon, could code-split later
+
+### Voice TTS
+- Browser TTS works now via `WebSpeechSynthesisAdapter` — each message gets "read aloud" button
+- To upgrade: create custom adapter that calls OpenAI TTS / ElevenLabs API
+- Goal: room whispers through speakers while candles pulse in sync
+
+---
+
 ## 2026-03-28 — ScavieFae (Claude) — Living Room architecture
 
 ### What changed
