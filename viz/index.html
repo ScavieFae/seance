@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Séance</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    @font-face {
+      font-family: 'SeanceUI';
+      src: local('SF Mono'), local('Menlo'), local('Consolas');
+    }
+
+    body {
+      background: #0A0A0A;
+      color: #A0A0A0;
+      font-family: 'SeanceUI', monospace;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+    }
+
+    #canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* --- Stats panel (left) --- */
+    #stats {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      z-index: 10;
+      pointer-events: none;
+      max-width: 280px;
+    }
+
+    #stats h1 {
+      font-size: 13px;
+      letter-spacing: 3px;
+      color: #FFB347;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+
+    .stat-section {
+      margin-bottom: 14px;
+    }
+
+    .stat-section h2 {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #FF8C00;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #666;
+    }
+
+    .stat-row .val {
+      color: #A0A0A0;
+      text-align: right;
+    }
+
+    .stat-row.active .val {
+      color: #FFB347;
+    }
+
+    .stat-row.disturbed .val {
+      color: #FF5014;
+    }
+
+    /* --- Narrative panel (bottom) --- */
+    #narrative {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      right: 24px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    #narrative-text {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.6;
+      font-style: italic;
+      transition: color 0.5s;
+    }
+
+    #narrative-text.active {
+      color: #A0A0A0;
+    }
+
+    /* --- Legend (right) --- */
+    #legend {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    #legend h2 {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #FF8C00;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      line-height: 2;
+      color: #666;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* --- Connection status --- */
+    #connection {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 10;
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .conn-live { color: #00FF80; }
+    .conn-mock { color: #FF8C00; }
+    .conn-dead { color: #FF0000; }
+
+    /* --- Hover tooltip --- */
+    #tooltip {
+      position: fixed;
+      display: none;
+      z-index: 20;
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid #333;
+      padding: 8px 12px;
+      font-size: 10px;
+      line-height: 1.6;
+      color: #A0A0A0;
+      pointer-events: none;
+      max-width: 200px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="stats">
+    <h1>&#x26B5; Séance</h1>
+    <div class="stat-section">
+      <h2>&#x25C8; Room</h2>
+      <div class="stat-row"><span>Candles</span><span class="val" id="s-candles">—</span></div>
+      <div class="stat-row"><span>Sensors</span><span class="val" id="s-sensors">—</span></div>
+      <div class="stat-row"><span>Signal Paths</span><span class="val" id="s-paths">—</span></div>
+    </div>
+    <div class="stat-section">
+      <h2>&#x25C8; Perception</h2>
+      <div class="stat-row"><span>Packets/sec</span><span class="val" id="s-pps">—</span></div>
+      <div class="stat-row"><span>Unique MACs</span><span class="val" id="s-macs">—</span></div>
+      <div class="stat-row"><span>Disturbances</span><span class="val" id="s-disturb">—</span></div>
+    </div>
+    <div class="stat-section">
+      <h2>&#x25C8; Candle Paths</h2>
+      <div id="candle-stats"></div>
+    </div>
+  </div>
+
+  <div id="legend">
+    <div id="connection" class="conn-mock">&#x25CF; mock data</div>
+  </div>
+
+  <div id="narrative">
+    <div id="narrative-text">Listening for electromagnetic whispers...</div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script src="seance-viz.js"></script>
+</body>
+</html>
