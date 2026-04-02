@@ -8,7 +8,7 @@ import { useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
-import { ROOM, CANDLES, SENSORS } from "../lib/config";
+import { ROOM, CANDLES, SENSORS, KNOWN_PRESENCES } from "../lib/config";
 
 // Log-scale mapping: variance 1-1000+ → 0-1 normalized intensity
 function normalizeVar(ratio) {
@@ -275,9 +275,156 @@ function SensorNode({ config }) {
   );
 }
 
+// ─── Triangulation ───────────────────────────────────────────────
+
+function triangulate(sensorRSSI) {
+  // Convert RSSI to distance estimates using log-distance path loss
+  // Reference: ~-40 dBm at 1 meter, path loss exponent ~2.5 indoors
+  const points = [];
+  for (const [ip, sData] of Object.entries(sensorRSSI)) {
+    const sensor = SENSORS[ip];
+    if (!sensor) continue;
+    const rssi = sData.rssi || -80;
+    const dist = Math.pow(10, (-40 - rssi) / 25); // meters (rough)
+    points.push({ x: sensor.x, z: sensor.z, dist });
+  }
+
+  if (points.length === 0) return null;
+  if (points.length === 1) {
+    // One sensor: place at estimated distance in a consistent direction
+    const p = points[0];
+    return { x: p.x + p.dist * 0.5, z: p.z + p.dist * 0.3 };
+  }
+
+  // Gradient descent to minimize distance errors — naturally goes outside grid
+  let x = points.reduce((s, p) => s + p.x, 0) / points.length;
+  let z = points.reduce((s, p) => s + p.z, 0) / points.length;
+
+  for (let iter = 0; iter < 30; iter++) {
+    let dx = 0, dz = 0;
+    for (const p of points) {
+      const d = Math.sqrt((x - p.x) ** 2 + (z - p.z) ** 2) || 0.01;
+      const error = d - p.dist;
+      dx += (error * (x - p.x)) / d;
+      dz += (error * (z - p.z)) / d;
+    }
+    x -= dx * 0.15;
+    z -= dz * 0.15;
+  }
+
+  return { x, z };
+}
+
+// ─── Presences (unknown MACs triangulated from RSSI) ─────────────
+
+function Presences({ data, onGhostClick }) {
+  const ghostsRef = useRef({});
+
+  useFrame(() => {
+    const presences = data?.presences || {};
+
+    for (const [mac, info] of Object.entries(presences)) {
+      const sensors = info.sensors || {};
+      if (Object.keys(sensors).length < 1) continue;
+
+      const pos = triangulate(sensors);
+      if (!pos) continue;
+
+      if (!ghostsRef.current[mac]) {
+        ghostsRef.current[mac] = { x: pos.x, z: pos.z, opacity: 0, age: 0, sensorCount: 0 };
+      }
+      const g = ghostsRef.current[mac];
+      const isKnown = !!KNOWN_PRESENCES[mac.toLowerCase()] || !!KNOWN_PRESENCES[mac];
+      // Heavier smoothing to reduce RSSI jitter — known presences get extra smoothing
+      const lerp = isKnown ? 0.015 : 0.03;
+      // Only move if delta is significant (deadzone to prevent micro-jitter)
+      const dx = pos.x - g.x;
+      const dz = pos.z - g.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > 0.1) {
+        g.x += dx * lerp;
+        g.z += dz * lerp;
+      }
+      g.opacity = Math.min(0.5, g.opacity + 0.02);
+      g.sensorCount = Object.keys(sensors).length;
+      g.age = 0;
+    }
+
+    for (const [mac, g] of Object.entries(ghostsRef.current)) {
+      if (!presences[mac]) {
+        g.opacity -= 0.005;
+        g.age++;
+      }
+      if (g.opacity <= 0) {
+        delete ghostsRef.current[mac];
+      }
+    }
+  });
+
+  const ghostMacs = Object.keys(ghostsRef.current);
+
+  return (
+    <>
+      {ghostMacs.map((mac) => (
+        <GhostDot key={mac} mac={mac} ghostsRef={ghostsRef} onClick={onGhostClick} />
+      ))}
+    </>
+  );
+}
+
+function GhostDot({ mac, ghostsRef, onClick }) {
+  const meshRef = useRef();
+  const glowRef = useRef();
+  const known = KNOWN_PRESENCES[mac.toLowerCase()] || KNOWN_PRESENCES[mac];
+  const color = known ? known.color : "#FFFFFF";
+  const size = known ? 0.08 : 0.04;
+  const glowSize = known ? 0.25 : 0.15;
+
+  useFrame(({ clock }) => {
+    const g = ghostsRef.current[mac];
+    if (!g || !meshRef.current) return;
+    const t = clock.elapsedTime;
+
+    const drift = known ? 0 : Math.sin(t * 0.7 + mac.charCodeAt(4) * 2) * 0.05;
+    meshRef.current.position.set(g.x + drift, 0.6, g.z + drift * 0.7);
+    meshRef.current.material.opacity = known ? 0.9 : g.opacity * 0.8;
+
+    if (glowRef.current) {
+      glowRef.current.position.copy(meshRef.current.position);
+      glowRef.current.material.opacity = known ? 0.2 : g.opacity * 0.15;
+      const pulse = 1 + Math.sin(t * (known ? 2.5 : 1.5) + mac.charCodeAt(2)) * 0.15;
+      glowRef.current.scale.setScalar(pulse);
+    }
+  });
+
+  return (
+    <group onClick={(e) => { e.stopPropagation(); onClick?.(mac); }}>
+      <mesh
+        ref={meshRef}
+        onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+        onPointerOut={() => { document.body.style.cursor = ""; }}
+      >
+        <sphereGeometry args={[size, known ? 16 : 8, known ? 16 : 8]} />
+        <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
+      </mesh>
+      <mesh ref={glowRef}>
+        <sphereGeometry args={[glowSize, known ? 16 : 8, known ? 16 : 8]} />
+        <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
+      </mesh>
+      {known && (
+        <Billboard position={[0, 0.18, 0]}>
+          <Text fontSize={0.1} color={color} anchorX="center" anchorY="bottom" outlineWidth={0.005} outlineColor="#000000">
+            {known.name}
+          </Text>
+        </Billboard>
+      )}
+    </group>
+  );
+}
+
 // ─── Scene ───────────────────────────────────────────────────────────
 
-function Scene({ data, onCandleClick, selectedCandle }) {
+function Scene({ data, onCandleClick, selectedCandle, onGhostClick }) {
   const smoothedRef = useRef({});
   const sensorPathsRef = useRef({});
 
@@ -338,13 +485,15 @@ function Scene({ data, onCandleClick, selectedCandle }) {
           />
         ))
       )}
+
+      <Presences data={data} onGhostClick={onGhostClick} />
     </>
   );
 }
 
 // ─── Exported Component ──────────────────────────────────────────────
 
-export default function RoomView({ data, onCandleClick, selectedCandle }) {
+export default function RoomView({ data, onCandleClick, selectedCandle, onGhostClick }) {
   const { width: w, height: h, depth: d } = ROOM;
 
   return (
@@ -357,7 +506,7 @@ export default function RoomView({ data, onCandleClick, selectedCandle }) {
       }}
       style={{ background: "#0A0A0A" }}
     >
-      <Scene data={data} onCandleClick={onCandleClick} selectedCandle={selectedCandle} />
+      <Scene data={data} onCandleClick={onCandleClick} selectedCandle={selectedCandle} onGhostClick={onGhostClick} />
       <OrbitControls
         target={[w / 2, 0, d / 2]}
         enableDamping

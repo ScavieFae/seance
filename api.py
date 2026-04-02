@@ -359,9 +359,32 @@ async def ws_broadcast():
         if sensor_data:
             per_sensor[sensor_ip] = sensor_data
 
+    # Build unknown MAC presences — per-sensor RSSI for triangulation
+    # Only include MACs seen in the last 10 seconds with enough data
+    now = time.time()
+    presences = {}
+    for sensor_ip, paths in sensor_paths.items():
+        for mac, ps in paths.items():
+            if mac in CANDLE_MACS:
+                continue
+            snap = ps.snapshot()
+            if snap["packets"] < 2:
+                continue
+            # Check recency — only include if buffer has recent data
+            if not ps.rssi_buf:
+                continue
+            if mac not in presences:
+                presences[mac] = {"sensors": {}}
+            presences[mac]["sensors"][sensor_ip] = {
+                "rssi": snap["rssi"],
+                "variance_ratio": snap["variance_ratio"],
+                "packets": snap["packets"],
+            }
+
     payload = {
         "paths": path_data,
         "sensor_paths": per_sensor,
+        "presences": presences,
         "meta": {
             "packets_per_sec": round(pps),
             "unique_macs": len(all_macs),
@@ -457,12 +480,78 @@ async def candle_pinger(interval=2.0):
     print("[api] Pinger stopped")
 
 
+# ─── Reactive Candle Loop ─────────────────────────────────────────────
+
+reactor_running = False
+
+async def candle_reactor(threshold=3.0, poll_interval=0.5):
+    """Watch CSI variance and change candle colors when motion detected nearby."""
+    global reactor_running
+    reactor_running = True
+    print(f"[api] Reactor started — threshold={threshold}")
+
+    # Track per-candle state to detect changes
+    candle_state = {}  # mac -> {"disturbed": bool, "peak_var": float}
+
+    while reactor_running:
+        # Check each sensor's view of each candle
+        for sensor_ip, paths in sensor_paths.items():
+            for mac, ps in paths.items():
+                if mac not in CANDLE_MACS:
+                    continue
+
+                info = CANDLE_MACS[mac]
+                live = ps.live()
+                short_var = live.get("short_variance", 0)
+                age = live.get("age_ms", 99999)
+
+                # Skip stale data (older than 5 seconds)
+                if age is None or age > 5000:
+                    continue
+
+                prev = candle_state.get(mac, {"disturbed": False, "peak_var": 0})
+                now_disturbed = short_var > threshold
+
+                if now_disturbed and not prev["disturbed"]:
+                    # Motion detected — light up!
+                    print(f"[reactor] MOTION near {info['name']} ({info['id']}) — var={short_var:.1f} from {sensor_ip}")
+                    await asyncio.to_thread(
+                        set_candle, info["id"], color_rgb=[255, 100, 20], bri=200
+                    )
+                    candle_state[mac] = {"disturbed": True, "peak_var": short_var}
+
+                elif not now_disturbed and prev["disturbed"]:
+                    # Calmed down — fade back to ID color
+                    print(f"[reactor] Calm near {info['name']} ({info['id']})")
+                    await asyncio.to_thread(
+                        set_candle, info["id"], bri=25
+                    )
+                    candle_state[mac] = {"disturbed": False, "peak_var": 0}
+
+                elif now_disturbed and short_var > prev["peak_var"] * 1.5:
+                    # Getting more intense — shift toward peak color
+                    print(f"[reactor] PEAK near {info['name']} ({info['id']}) — var={short_var:.1f}")
+                    await asyncio.to_thread(
+                        set_candle, info["id"], color_rgb=[100, 50, 255], bri=255
+                    )
+                    candle_state[mac] = {"disturbed": True, "peak_var": short_var}
+
+        await asyncio.sleep(poll_interval)
+
+    # Reset all candles on stop
+    print("[api] Reactor stopped — resetting candles")
+    for key, c in CANDLE_CONFIG["candles"].items():
+        cid = key.replace("candle_", "")
+        set_candle(cid, bri=25)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(udp_listener(mock=app.state.mock))
     yield
-    global pinger_running
+    global pinger_running, reactor_running
     pinger_running = False
+    reactor_running = False
     task.cancel()
 
 app = FastAPI(title="Séance API", lifespan=lifespan)
@@ -659,6 +748,40 @@ async def stop_pinger():
 @app.get("/pinger/status")
 def pinger_status():
     return {"running": pinger_running}
+
+
+# ─── REST: Reactor ────────────────────────────────────────────────────
+
+reactor_task = None
+
+@app.post("/reactor/start")
+async def start_reactor(threshold: float = 3.0):
+    """Start reactive candle loop — candles respond to nearby motion."""
+    global reactor_task, reactor_running
+    if reactor_task and not reactor_task.done():
+        return {"status": "already running"}
+    # Also start pinger if not running
+    global pinger_task
+    if not pinger_task or pinger_task.done():
+        global pinger_running
+        pinger_running = True
+        pinger_task = asyncio.create_task(candle_pinger(2.0))
+    reactor_running = True
+    reactor_task = asyncio.create_task(candle_reactor(threshold))
+    return {"status": "started", "threshold": threshold}
+
+
+@app.post("/reactor/stop")
+async def stop_reactor():
+    """Stop reactive candle loop and reset colors."""
+    global reactor_running
+    reactor_running = False
+    return {"status": "stopping"}
+
+
+@app.get("/reactor/status")
+def reactor_status():
+    return {"running": reactor_running}
 
 
 # ─── REST: Sweep ──────────────────────────────────────────────────────

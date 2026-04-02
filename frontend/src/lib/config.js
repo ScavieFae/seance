@@ -67,6 +67,12 @@ export function getSensorsForCandle(mac) {
   return [];
 }
 
+// Known presences — people we can identify
+export const KNOWN_PRESENCES = {
+  "da:95:6a:26:6c:05": { name: "Mattie", color: "#FF4488", hex: 0xff4488 },
+  "7e:bb:d4:3e:14:11": { name: "Brian", color: "#44FF88", hex: 0x44ff88 },
+};
+
 // Moods
 export const MOODS = {
   SLEEPING:       "sleeping",
